@@ -1,36 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MAICE 수학 피드백 시스템
 
-## Getting Started
+MAICE는 학생들이 수학 문제를 제출하고, OCR(광학 문자 인식)을 통해 문제를 인식한 후, 자동으로 채점 및 피드백을 제공하는 시스템입니다. 이 프로젝트는 Next.js를 기반으로 하며, React를 사용하여 사용자 인터페이스를 구성합니다.
 
-First, run the development server:
+## 시작하기
+
+이 프로젝트를 로컬에서 실행하려면 다음 단계를 따르세요.
+
+### 필수 조건
+
+- Node.js (v14 이상)
+- npm 또는 yarn
+
+### 설치
+
+1. 이 저장소를 클론합니다:
+
+   ```bash
+   git clone https://github.com/yourusername/maice-front.git
+   cd maice-front
+   ```
+
+2. 의존성을 설치합니다:
+
+   ```bash
+   npm install
+   # 또는
+   yarn install
+   ```
+
+### 개발 서버 실행
+
+개발 서버를 시작하려면 다음 명령어를 실행하세요:
 
 ```bash
 npm run dev
-# or
+# 또는
 yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+브라우저에서 [http://localhost:3000](http://localhost:3000)으로 이동하여 결과를 확인할 수 있습니다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 사용법
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. 사용자는 로그인 페이지에서 닉네임을 입력하여 시스템에 로그인합니다.
+2. 로그인 후, 학생 대시보드에서 문제를 제출할 수 있습니다.
+3. 제출된 문제는 OCR을 통해 인식되며, 인식된 텍스트와 수식이 표시됩니다.
+4. 사용자는 인식된 수식을 수정할 수 있으며, 수정 후 채점을 시작할 수 있습니다.
+5. 채점 결과는 점수와 피드백 형태로 제공됩니다.
 
-## Learn More
+## 주요 기능
 
-To learn more about Next.js, take a look at the following resources:
+- **OCR 인식**: 제출된 이미지에서 수학 문제를 인식합니다.
+- **수식 렌더링**: LaTeX 형식의 수식을 렌더링하여 보기 좋게 표시합니다.
+- **채점 시스템**: 자동으로 문제를 채점하고 피드백을 제공합니다.
+- **학생 대시보드**: 학생들이 제출한 문제와 채점 결과를 관리할 수 있는 대시보드.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 기여 방법
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+기여를 원하신다면, 다음 단계를 따라주세요:
 
-## Deploy on Vercel
+1. 이 저장소를 포크합니다.
+2. 새로운 브랜치를 생성합니다:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+   ```bash
+   git checkout -b feature/YourFeature
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+3. 변경 사항을 커밋합니다:
+
+   ```bash
+   git commit -m "Add some feature"
+   ```
+
+4. 브랜치를 푸시합니다:
+
+   ```bash
+   git push origin feature/YourFeature
+   ```
+
+5. Pull Request를 생성합니다.
+
+## 라이센스
+
+이 프로젝트는 MIT 라이센스 하에 배포됩니다. 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하세요.
