@@ -11,384 +11,260 @@ interface ImageEditorProps {
 
 export default function ImageEditor({ imageUrl, onCropComplete }: ImageEditorProps) {
     const [crop, setCrop] = useState<Crop>({
-        unit: '%',
-        width: 100,
-        height: 100,
+        unit: 'px',
+        width: 0,
+        height: 0,
         x: 0,
         y: 0
     });
     const [rotation, setRotation] = useState(0);
     const [imageRef, setImageRef] = useState<HTMLImageElement | null>(null);
     const [isEditing, setIsEditing] = useState(true);
-    const [history, setHistory] = useState<{rotation: number, crop: Crop}[]>([]);
-    const [isDrawing, setIsDrawing] = useState(false);
-    const [drawMode, setDrawMode] = useState<'pen' | 'eraser' | null>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const contextRef = useRef<CanvasRenderingContext2D | null>(null);
-    const [canvasHistory, setCanvasHistory] = useState<ImageData[]>([]);
-    const [scale, setScale] = useState(1);
-    const [position, setPosition] = useState({ x: 0, y: 0 });
-    const [isDragging, setIsDragging] = useState(false);
-    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-
-    const initCanvas = useCallback((img: HTMLImageElement) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        
-        const context = canvas.getContext('2d');
-        if (!context) return;
-
-        context.lineCap = 'round';
-        context.strokeStyle = '#000000';
-        context.lineWidth = 2;
-        contextRef.current = context;
-        
-        const tempImage = new Image();
-        tempImage.src = imageUrl;
-        tempImage.onload = () => {
-            context.drawImage(tempImage, 0, 0, canvas.width, canvas.height);
-            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-            setCanvasHistory([imageData]);
-        };
-    }, [imageUrl]);
+    const [highContrast, setHighContrast] = useState(false);
+    const [grayscale, setGrayscale] = useState(false);
+    const [imageHeight, setImageHeight] = useState<number>(0);
+    const [croppedUrl, setCroppedUrl] = useState<string>(imageUrl);
+    const [isProcessing, setIsProcessing] = useState(false);
 
     const onImageLoad = useCallback((img: HTMLImageElement) => {
         setImageRef(img);
-        if (drawMode) {
-            initCanvas(img);
-        }
-    }, [initCanvas, drawMode]);
-
-    useEffect(() => {
-        if (drawMode && imageRef) {
-            initCanvas(imageRef);
-        }
-    }, [drawMode, imageRef, initCanvas]);
-
-    const getMousePos = useCallback((canvas: HTMLCanvasElement, e: React.MouseEvent) => {
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width / (rect.width * scale);
-        const scaleY = canvas.height / (rect.height * scale);
+        // 이미지 비율에 맞춰 높이 계산
+        const containerWidth = img.parentElement?.clientWidth || 0;
+        const ratio = containerWidth / img.naturalWidth;
+        const calculatedHeight = img.naturalHeight * ratio;
+        setImageHeight(calculatedHeight);
         
-        return {
-            x: (e.clientX - rect.left - position.x) * scaleX,
-            y: (e.clientY - rect.top - position.y) * scaleY
-        };
-    }, [scale, position]);
+        setCrop({
+            unit: 'px',
+            width: img.width,
+            height: img.height,
+            x: 0,
+            y: 0
+        });
+    }, []);
 
-    const startDrawing = useCallback((e: React.MouseEvent) => {
-        if (!drawMode || !contextRef.current) return;
-        
-        const canvas = canvasRef.current;
-        if (!canvas) return;
+    const toggleCropMode = useCallback(async () => {
+        if (isEditing) {
+            // 크롭 모드에서 확인 버튼 클릭 시
+            if (imageRef && crop.width && crop.height) {
+                setIsProcessing(true);
+                const canvas = document.createElement('canvas');
+                const scaleX = imageRef.naturalWidth / imageRef.width;
+                const scaleY = imageRef.naturalHeight / imageRef.height;
+                
+                canvas.width = crop.width * scaleX;
+                canvas.height = crop.height * scaleY;
+                
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    setIsProcessing(false);
+                    return;
+                }
 
-        const { x, y } = getMousePos(canvas, e);
-        contextRef.current.beginPath();
-        contextRef.current.moveTo(x, y);
-        setIsDrawing(true);
-    }, [drawMode, getMousePos]);
+                if (rotation !== 0) {
+                    ctx.translate(canvas.width/2, canvas.height/2);
+                    ctx.rotate(rotation * Math.PI / 180);
+                    ctx.translate(-canvas.width/2, -canvas.height/2);
+                }
 
-    const draw = useCallback((e: React.MouseEvent) => {
-        if (!isDrawing || !drawMode || !contextRef.current) return;
+                ctx.drawImage(
+                    imageRef,
+                    crop.x * scaleX,
+                    crop.y * scaleY,
+                    crop.width * scaleX,
+                    crop.height * scaleY,
+                    0,
+                    0,
+                    crop.width * scaleX,
+                    crop.height * scaleY
+                );
 
-        const canvas = canvasRef.current;
-        if (!canvas) return;
+                if (highContrast || grayscale) {
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const data = imageData.data;
 
-        const { x, y } = getMousePos(canvas, e);
-        contextRef.current.lineTo(x, y);
-        contextRef.current.stroke();
-    }, [isDrawing, drawMode, getMousePos]);
+                    for (let i = 0; i < data.length; i += 4) {
+                        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                        
+                        if (highContrast) {
+                            const threshold = 128;
+                            const value = avg > threshold ? 255 : 0;
+                            data[i] = data[i + 1] = data[i + 2] = value;
+                        } else if (grayscale) {
+                            data[i] = data[i + 1] = data[i + 2] = avg;
+                        }
+                    }
+                    
+                    ctx.putImageData(imageData, 0, 0);
+                }
 
-    const stopDrawing = useCallback(() => {
-        if (!isDrawing || !contextRef.current || !canvasRef.current) return;
-
-        contextRef.current.closePath();
-        setIsDrawing(false);
-
-        const imageData = contextRef.current.getImageData(
-            0, 0, canvasRef.current.width, canvasRef.current.height
-        );
-        setCanvasHistory(prev => [...prev, imageData]);
-    }, [isDrawing]);
-
-    const handleConfirmCrop = useCallback(async () => {
-        if (!imageRef || !crop.width || !crop.height) return;
-
-        setHistory(prev => [...prev, { rotation, crop }]);
-        setIsEditing(false);
-
-        const canvas = document.createElement('canvas');
-        const scaleX = imageRef.naturalWidth / imageRef.width;
-        const scaleY = imageRef.naturalHeight / imageRef.height;
-        
-        const rotatedWidth = Math.abs(crop.width * Math.cos(rotation * Math.PI / 180)) + 
-                            Math.abs(crop.height * Math.sin(rotation * Math.PI / 180));
-        const rotatedHeight = Math.abs(crop.width * Math.sin(rotation * Math.PI / 180)) + 
-                             Math.abs(crop.height * Math.cos(rotation * Math.PI / 180));
-        
-        canvas.width = rotatedWidth * scaleX;
-        canvas.height = rotatedHeight * scaleY;
-        
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        ctx.translate(canvas.width/2, canvas.height/2);
-        ctx.rotate(rotation * Math.PI / 180);
-        ctx.translate(-canvas.width/2, -canvas.height/2);
-
-        ctx.drawImage(
-            imageRef,
-            crop.x * scaleX,
-            crop.y * scaleY,
-            crop.width * scaleX,
-            crop.height * scaleY,
-            (canvas.width - crop.width * scaleX) / 2,
-            (canvas.height - crop.height * scaleY) / 2,
-            crop.width * scaleX,
-            crop.height * scaleY
-        );
-
-        canvas.toBlob(
-            (blob) => {
-                if (blob) onCropComplete(blob);
-            },
-            'image/jpeg',
-            1
-        );
-    }, [imageRef, crop, rotation, onCropComplete]);
-
-    const handleUndo = useCallback(() => {
-        if (drawMode) {
-            if (canvasHistory.length > 1) {
-                const previousState = canvasHistory[canvasHistory.length - 2];
-                const context = contextRef.current;
-                if (!context || !canvasRef.current) return;
-
-                context.putImageData(previousState, 0, 0);
-                setCanvasHistory(prev => prev.slice(0, -1));
+                await new Promise<void>((resolve) => {
+                    canvas.toBlob(
+                        (blob) => {
+                            if (blob) {
+                                const newUrl = URL.createObjectURL(blob);
+                                setCroppedUrl(newUrl);
+                                if (!isEditing) {
+                                    onCropComplete(blob);
+                                }
+                            }
+                            resolve();
+                        },
+                        'image/jpeg',
+                        1
+                    );
+                });
+                
+                setIsProcessing(false);
             }
+            setIsEditing(false);  // 크롭 모드 비활성화
         } else {
-            const previousState = history[history.length - 1];
-            if (previousState) {
-                setRotation(previousState.rotation);
-                setCrop(previousState.crop);
-                setHistory(prev => prev.slice(0, -1));
-            } else {
-                setRotation(0);
+            // 다시 크롭 모드로 돌아갈 때
+            setIsEditing(true);
+            setCroppedUrl(imageUrl);  // 원본 이미지 URL로 복원
+            if (imageRef) {
                 setCrop({
-                    unit: '%',
-                    width: 100,
-                    height: 100,
+                    unit: 'px',
+                    width: imageRef.width,
+                    height: imageRef.height,
                     x: 0,
                     y: 0
                 });
             }
+            setRotation(0);  // 회전 초기화
+            setHighContrast(false);  // 고대비 초기화
+            setGrayscale(false);  // 흑백 초기화
         }
-        setIsEditing(true);
-    }, [history, drawMode, canvasHistory]);
+    }, [imageRef, crop, rotation, highContrast, grayscale, isEditing, onCropComplete, imageUrl]);
 
-    const handleWheel = useCallback((e: React.WheelEvent) => {
-        if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            const delta = e.deltaY * -0.01;
-            setScale(prevScale => {
-                const newScale = Math.min(Math.max(0.1, prevScale + delta), 5);
-                return newScale;
-            });
+    // 최종 확정 버튼 추가
+    const handleConfirm = useCallback(() => {
+        if (!isEditing && croppedUrl !== imageUrl) {
+            fetch(croppedUrl)
+                .then(res => res.blob())
+                .then(blob => {
+                    onCropComplete(blob);
+                });
         }
-    }, []);
+    }, [croppedUrl, imageUrl, isEditing, onCropComplete]);
 
-    const handleDragStart = useCallback((e: React.MouseEvent) => {
-        if (e.button === 1 || (e.button === 0 && e.altKey)) {
-            setIsDragging(true);
-            setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
-        }
-    }, [position]);
-
-    const handleDrag = useCallback((e: React.MouseEvent) => {
-        if (isDragging) {
-            setPosition({
-                x: e.clientX - dragStart.x,
-                y: e.clientY - dragStart.y
-            });
-        }
-    }, [isDragging, dragStart]);
-
-    const handleDragEnd = useCallback(() => {
-        setIsDragging(false);
-    }, []);
+    // 컴포넌트 언마운트 시 URL 정리
+    useEffect(() => {
+        return () => {
+            if (croppedUrl !== imageUrl) {
+                URL.revokeObjectURL(croppedUrl);
+            }
+        };
+    }, [croppedUrl, imageUrl]);
 
     return (
-        <div 
-            className="space-y-1"
-            onWheel={handleWheel}
-            onMouseDown={handleDragStart}
-            onMouseMove={handleDrag}
-            onMouseUp={handleDragEnd}
-            onMouseLeave={handleDragEnd}
-        >
-            <div className="relative w-full overflow-hidden" style={{ height: '600px' }}>
-                {isEditing ? (
-                    drawMode ? (
-                        <div 
-                            className="relative w-full h-full"
-                            style={{
-                                transform: `translate(${position.x}px, ${position.y}px)`,
-                                cursor: isDragging ? 'grabbing' : 'grab'
-                            }}
-                        >
-                            <canvas
-                                ref={canvasRef}
-                                onMouseDown={startDrawing}
-                                onMouseMove={draw}
-                                onMouseUp={stopDrawing}
-                                onMouseLeave={stopDrawing}
-                                className="cursor-crosshair"
-                                style={{
-                                    transform: `scale(${scale}) rotate(${rotation}deg)`,
-                                    transformOrigin: 'center center',
-                                    maxWidth: '100%',
-                                    maxHeight: '100%'
-                                }}
-                            />
-                        </div>
-                    ) : (
-                        <ReactCrop
-                            crop={crop}
-                            onChange={(c) => setCrop(c)}
-                            className="max-w-full"
-                        >
-                            <img
-                                src={imageUrl}
-                                onLoad={(e) => onImageLoad(e.currentTarget)}
-                                alt="Crop me"
-                                className="w-full h-auto"
-                                style={{
-                                    transform: `rotate(${rotation}deg)`
-                                }}
-                            />
-                        </ReactCrop>
-                    )
-                ) : (
-                    <img
-                        src={imageUrl}
-                        alt="Cropped result"
-                        className="w-full h-auto"
-                        style={{
-                            transform: `rotate(${rotation}deg)`
-                        }}
-                    />
-                )}
-            </div>
-            
-            <div className="flex items-center space-x-4 bg-white py-1.5 px-3 rounded-lg shadow-sm">
+        <div className="flex flex-col gap-4">
+            <div className="flex items-center space-x-4 bg-white py-2 px-4 rounded-lg shadow-sm">
                 <div className="flex-1">
-                    {!drawMode ? (
-                        <>
-                            <label htmlFor="rotation" className="block text-sm font-medium text-gray-700 mb-0.5">
-                                회전 ({rotation}°)
-                            </label>
-                            <input
-                                id="rotation"
-                                type="range"
-                                min="-180"
-                                max="180"
-                                value={rotation}
-                                onChange={(e) => setRotation(Number(e.target.value))}
-                                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                                disabled={!isEditing}
-                            />
-                        </>
-                    ) : (
-                        <div className="flex flex-col space-y-2">
-                            <div className="flex space-x-2">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        if (contextRef.current) {
-                                            contextRef.current.strokeStyle = '#000000';
-                                            contextRef.current.lineWidth = 2;
-                                        }
-                                        setDrawMode('pen');
-                                    }}
-                                    className={`px-3 py-1.5 rounded-md ${
-                                        drawMode === 'pen' 
-                                            ? 'bg-blue-600 text-white' 
-                                            : 'bg-gray-100 text-gray-700'
-                                    }`}
-                                >
-                                    펜
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        if (contextRef.current) {
-                                            contextRef.current.strokeStyle = '#ffffff';
-                                            contextRef.current.lineWidth = 20;
-                                        }
-                                        setDrawMode('eraser');
-                                    }}
-                                    className={`px-3 py-1.5 rounded-md ${
-                                        drawMode === 'eraser' 
-                                            ? 'bg-blue-600 text-white' 
-                                            : 'bg-gray-100 text-gray-700'
-                                    }`}
-                                >
-                                    지우개
-                                </button>
-                            </div>
-                            <div>
-                                <label 
-                                    htmlFor="zoom-control" 
-                                    className="block text-sm font-medium text-gray-700 mb-0.5"
-                                >
-                                    확대/축소 ({Math.round(scale * 100)}%)
-                                </label>
-                                <input
-                                    id="zoom-control"
-                                    type="range"
-                                    min="10"
-                                    max="500"
-                                    value={scale * 100}
-                                    onChange={(e) => setScale(Number(e.target.value) / 100)}
-                                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                                />
-                            </div>
-                        </div>
-                    )}
+                    <label htmlFor="rotation" className="block text-sm font-medium text-gray-700 mb-1">
+                        회전 ({rotation}°)
+                    </label>
+                    <input
+                        id="rotation"
+                        type="range"
+                        min="-180"
+                        max="180"
+                        value={rotation}
+                        onChange={(e) => setRotation(Number(e.target.value))}
+                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                    />
                 </div>
                 <div className="flex space-x-2">
+                    <button
+                        type="button"
+                        onClick={() => setHighContrast(!highContrast)}
+                        className={`px-4 py-2 rounded-md ${
+                            highContrast 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-100 text-gray-700'
+                        }`}
+                        disabled={isProcessing}
+                    >
+                        고대비
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setGrayscale(!grayscale)}
+                        className={`px-4 py-2 rounded-md ${
+                            grayscale 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-100 text-gray-700'
+                        }`}
+                        disabled={isProcessing}
+                    >
+                        흑백
+                    </button>
+                    <button
+                        type="button"
+                        onClick={toggleCropMode}
+                        disabled={isProcessing}
+                        className={`px-4 py-2 rounded-md ${
+                            !isEditing 
+                                ? 'bg-gray-600 text-white' 
+                                : 'bg-blue-600 text-white'
+                        }`}
+                    >
+                        {isEditing ? '선택 영역 확인' : '영역 다시 선택'}
+                    </button>
                     {!isEditing && (
                         <button
                             type="button"
-                            onClick={handleUndo}
-                            className="px-3 py-1.5 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+                            onClick={handleConfirm}
+                            className="px-4 py-2 rounded-md bg-green-600 text-white"
                         >
-                            실행 취소
+                            편집 완료
                         </button>
                     )}
-                    {isEditing && (
-                        <>
-                            <button
-                                type="button"
-                                onClick={() => setDrawMode(drawMode ? null : 'pen')}
-                                className="px-3 py-1.5 bg-gray-600 text-white rounded-md hover:bg-gray-700"
-                            >
-                                {drawMode ? '자르기 모드' : '그리기 모드'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleConfirmCrop}
-                                className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                            >
-                                선택 영역 확인
-                            </button>
-                        </>
-                    )}
                 </div>
+            </div>
+
+            <div className="relative w-full overflow-hidden rounded-lg bg-gray-50" 
+                 style={{ height: imageHeight || 'auto' }}>
+                {isEditing ? (
+                    <ReactCrop
+                        crop={crop}
+                        onChange={(c) => setCrop(c)}
+                        className="w-full h-full"
+                        minWidth={100}
+                        minHeight={100}
+                        keepSelection
+                        ruleOfThirds
+                    >
+                        <img
+                            src={imageUrl}  // 항상 원본 이미지 사용
+                            onLoad={(e) => onImageLoad(e.currentTarget)}
+                            alt="Crop me"
+                            className="w-full h-full object-contain"
+                            style={{
+                                transform: `rotate(${rotation}deg)`,
+                                filter: `
+                                    ${highContrast ? 'contrast(200%)' : ''}
+                                    ${grayscale ? 'grayscale(100%)' : ''}
+                                `
+                            }}
+                        />
+                    </ReactCrop>
+                ) : (
+                    <div className="w-full h-full">
+                        <img
+                            src={croppedUrl}  // 크롭된 이미지 URL 사용
+                            alt="Cropped result"
+                            className="w-full h-full object-contain"
+                            style={{
+                                transform: `rotate(${rotation}deg)`,
+                                filter: `
+                                    ${highContrast ? 'contrast(200%)' : ''}
+                                    ${grayscale ? 'grayscale(100%)' : ''}
+                                `
+                            }}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );

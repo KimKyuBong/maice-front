@@ -1,16 +1,34 @@
-import type { DetailedScore } from "../utils/clientApi";
-
-export interface GradingHistoryItem {
+export interface GradingListItem {
     id: number;
-    submission_id: string;
+    problem_key: string;
+    total_score: number;
+    max_score: number;
+    created_at: string;
+    grading_number: number;
+}
+
+export interface DetailedCriteria {
+    id: number;
+    item: string;
+    points: number;
+    description: string;
+}
+
+export interface DetailedScore {
+    id: number;
+    detailed_criteria_id: number;
+    score: number;
+    feedback: string;
+    detailed_criteria: DetailedCriteria;
+}
+
+export interface GradingDetail {
+    id: number;
     student_id: string;
     problem_key: string;
-    problem_type: string;
-    submission_date: string;
-    image_url: string;
+    submission_id: number;
+    extraction_id: number;
     extracted_text: string;
-    solution_steps: string[];
-    latex_expressions: string[];
     total_score: number;
     max_score: number;
     feedback: string;
@@ -18,12 +36,13 @@ export interface GradingHistoryItem {
     image_path: string;
     created_at: string;
     detailed_scores: DetailedScore[];
-    submission: {
-        id: string;
-        student_id: string;
-        problem_type: string;
-        image_path: string;
-        extracted_text: string;
-        created_at: string;
-    };
+}
+
+
+// 채점 목록 응답 데이터 타입
+export interface GradingListResponse {
+  items: GradingListItem[];
+  total: number;
+  limit: number;
+  offset: number;
 } 

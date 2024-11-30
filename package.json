@@ -9,12 +9,16 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@heroicons/react": "^2.2.0",
+    "canvas": "^2.11.2",
+    "konva": "^9.3.16",
     "mathjax-full": "^3.2.2",
     "next": "15.0.2",
     "react": "19.0.0-rc-02c0e824-20241028",
     "react-dom": "19.0.0-rc-02c0e824-20241028",
     "react-easy-crop": "^5.1.0",
-    "react-image-crop": "^11.0.7"
+    "react-image-crop": "^11.0.7",
+    "react-konva": "^18.2.10"
   },
   "devDependencies": {
     "@types/katex": "^0.16.7",

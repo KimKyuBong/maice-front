@@ -116,7 +116,15 @@ export default function GradingResults({
                                             <div className="flex justify-between items-start">
                                                 <div>
                                                     <div className="font-medium">
-                                                        {new Date(grading.created_at).toLocaleString()}
+                                                        {new Date(grading.created_at).toLocaleString('ko-KR', {
+                                                            year: 'numeric',
+                                                            month: '2-digit',
+                                                            day: '2-digit',
+                                                            hour: '2-digit',
+                                                            minute: '2-digit',
+                                                            second: '2-digit',
+                                                            hour12: false
+                                                        })}
                                                     </div>
                                                     <div className="text-sm text-gray-500 mt-1">
                                                         점수: {grading.total_score} / {grading.max_score}

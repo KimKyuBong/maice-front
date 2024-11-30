@@ -1,102 +1,97 @@
 "use client";
 
-import { useState, type ChangeEvent } from 'react';
+import { useState, useEffect } from 'react';
 import ImageEditor from './ImageEditor';
 import type { UploadFormProps } from './types';
 
 export default function UploadForm({
-    mathTopic,
-    setMathTopic,
     selectedFile,
     previewUrl,
     isSubmitting,
     studentId,
+    selectedProblemKey,
     onFileSelect,
     onSubmit
 }: UploadFormProps) {
-    const handleCropComplete = (croppedImage: Blob) => {
+    const [showEditor, setShowEditor] = useState(false);
+
+    // previewUrl이 변경될 때마다 편집기를 자동으로 표시
+    useEffect(() => {
+        if (previewUrl) {
+            setShowEditor(true);
+        }
+    }, [previewUrl]);
+
+    const handleCropComplete = async (croppedImage: Blob) => {
+        setShowEditor(false);
+        // Blob을 File 객체로 변환
         const file = new File([croppedImage], selectedFile?.name || 'cropped-image.jpg', {
-            type: 'image/jpeg'
+            type: croppedImage.type
         });
-
-        // FileList 객체 생성
-        const dataTransfer = new DataTransfer();
-        dataTransfer.items.add(file);
-
-        // React ChangeEvent 생성
-        const syntheticEvent = {
+        
+        // 파일 선택 이벤트 시뮬레이션
+        const event = {
             target: {
-                files: dataTransfer.files,
-                value: '',
-                name: 'solutionImage',
-                type: 'file'
-            },
-            preventDefault: () => {},
-            stopPropagation: () => {},
-        } as ChangeEvent<HTMLInputElement>;
+                files: [file]
+            }
+        } as unknown as React.ChangeEvent<HTMLInputElement>;
+        
+        onFileSelect(event);
+    };
 
-        onFileSelect(syntheticEvent);
+    const handleKeyPress = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            setShowEditor(true);
+        }
     };
 
     return (
-        <form onSubmit={onSubmit} className="space-y-6" encType="multipart/form-data">
+        <form onSubmit={onSubmit} className="space-y-4">
             <div>
-                <label htmlFor="mathTopic" className="block text-sm font-medium text-gray-700">
-                    수학 주제
-                </label>
-                <select
-                    id="mathTopic"
-                    value={mathTopic}
-                    onChange={(e) => setMathTopic(e.target.value)}
-                    required
-                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                <label 
+                    htmlFor="solution-image" 
+                    className="block text-sm font-medium text-gray-700 mb-2"
                 >
-                    <option value="algebra">대수</option>
-                    <option value="geometry">기하</option>
-                    <option value="calculus">미적분</option>
-                    <option value="probability">확률과 통계</option>
-                    <option value="other">기타</option>
-                </select>
+                    답안 이미지
+                </label>
+                <input
+                    type="file"
+                    id="solution-image"
+                    accept="image/*"
+                    onChange={onFileSelect}
+                    disabled={isSubmitting}
+                    className="block w-full text-sm text-gray-500
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-md file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-blue-50 file:text-blue-700
+                        hover:file:bg-blue-100"
+                />
             </div>
 
-            <div>
-                <span id="image-input-label" className="block text-sm font-medium text-gray-700 mb-2">
-                    풀이 이미지
-                </span>
-                <div className="space-y-4" aria-labelledby="image-input-label">
-                    <input
-                        id="solutionImage"
-                        type="file"
-                        accept="image/*"
-                        onChange={onFileSelect}
-                        className="block w-full text-sm text-gray-500
-                            file:mr-4 file:py-2 file:px-4
-                            file:rounded-md file:border-0
-                            file:text-sm file:font-semibold
-                            file:bg-blue-50 file:text-blue-700
-                            hover:file:bg-blue-100"
-                    />
-                </div>
-            </div>
-
-            {previewUrl && (
+            {previewUrl && !showEditor && (
                 <div className="mt-4">
-                    <p className="text-sm font-medium text-gray-700 mb-2">
-                        이미지에서 평가하고자 하는 영역을 선택하세요
-                    </p>
-                    <ImageEditor
-                        imageUrl={previewUrl}
-                        onCropComplete={handleCropComplete}
+                    <img 
+                        src={previewUrl} 
+                        alt="Preview" 
+                        className="max-w-full h-auto" 
                     />
                 </div>
             )}
 
+            {showEditor && previewUrl && (
+                <ImageEditor
+                    imageUrl={previewUrl}
+                    onCropComplete={handleCropComplete}
+                />
+            )}
+
             <button
                 type="submit"
-                disabled={isSubmitting || !selectedFile || !studentId}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!selectedFile || isSubmitting || !studentId || !selectedProblemKey}
+                className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
             >
-                {isSubmitting ? '제출 중...' : '풀이 제출하기'}
+                {isSubmitting ? '제출 중...' : '제출하기'}
             </button>
         </form>
     );

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { submitOCR, submitGrading } from '@/app/utils/clientApi';
+import { useState, useEffect, useRef } from 'react';
+import { submitOCR, submitGrading, listGradingCriteria } from '@/app/utils/clientApi';
 import { getCurrentUser } from '@/app/utils/auth';
 import UploadForm from './UploadForm';
 import OCRResult from './OCRResult';
@@ -9,16 +9,18 @@ import GradingResult from './GradingResult';
 import LoadingSpinner from './LoadingSpinner';
 import type { FeedbackData } from './types';
 import LoadingModal from '@/app/components/LoadingModal';
+import type { CriteriaResponse } from '@/app/students/components/CriteriaManager/types';
 
 export default function SolutionUpload() {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const [mathTopic, setMathTopic] = useState('algebra');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [feedback, setFeedback] = useState<FeedbackData | null>(null);
     const [studentId, setStudentId] = useState<string | null>(null);
-    const [isEditing, setIsEditing] = useState(false);
     const [submissionId, setSubmissionId] = useState<string | null>(null);
+    const [problemKeys, setProblemKeys] = useState<string[]>([]);
+    const [selectedProblemKey, setSelectedProblemKey] = useState<string>('');
+    const [allCriteria, setAllCriteria] = useState<CriteriaResponse[]>([]);
 
     useEffect(() => {
         const fetchStudentId = async () => {
@@ -42,41 +44,106 @@ export default function SolutionUpload() {
         fetchStudentId();
     }, []);
 
+    useEffect(() => {
+        const fetchCriteria = async () => {
+            try {
+                const response = await listGradingCriteria();
+                if (response.data) {
+                    setAllCriteria(response.data);
+                    const keys = response.data.map((c: CriteriaResponse) => c.problem_key);
+                    setProblemKeys(keys);
+                    
+                    const defaultCriteria = response.data.find(c => c.problem_key === "default");
+                    if (defaultCriteria) {
+                        setSelectedProblemKey(defaultCriteria.problem_key);
+                    } else if (keys.length > 0) {
+                        setSelectedProblemKey(keys[0]);
+                    }
+                }
+            } catch (error) {
+                console.error('채점 기준 조회 실패:', error);
+            }
+        };
+        fetchCriteria();
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (previewUrl) {
+                URL.revokeObjectURL(previewUrl);
+            }
+        };
+    }, [previewUrl]);
+
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (previewUrl) {
+            URL.revokeObjectURL(previewUrl);
+        }
+        
         const file = e.target.files?.[0];
         if (file) {
             setSelectedFile(file);
-            setPreviewUrl(URL.createObjectURL(file));
+            const newPreviewUrl = URL.createObjectURL(file);
+            setPreviewUrl(newPreviewUrl);
         }
     };
 
+    const textEditTimeoutRef = useRef<NodeJS.Timeout>();
+    
     const handleTextEdit = (newText: string) => {
         if (!feedback) return;
-        setFeedback({
-            ...feedback,
-            edited_text: newText
-        });
+        
+        if (textEditTimeoutRef.current) {
+            clearTimeout(textEditTimeoutRef.current);
+        }
+        
+        textEditTimeoutRef.current = setTimeout(() => {
+            setFeedback({
+                ...feedback,
+                edited_text: newText
+            });
+        }, 300);
     };
+
+    useEffect(() => {
+        return () => {
+            if (textEditTimeoutRef.current) {
+                clearTimeout(textEditTimeoutRef.current);
+            }
+        };
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedFile || !studentId) return;
+        if (!selectedFile || !studentId || !selectedProblemKey) {
+            alert('파일, 학생 ID, 문제 키가 모두 필요합니다.');
+            return;
+        }
 
         setIsSubmitting(true);
         const formData = new FormData();
         formData.append('solution_image', selectedFile);
-        formData.append('problem_type', mathTopic);
+        formData.append('problem_key', selectedProblemKey);
         formData.append('student_id', studentId);
 
         try {
             const ocrResult = await submitOCR(formData);
-            setSubmissionId(ocrResult.submission_id);
+            if (!ocrResult.success || !ocrResult.data) {
+                throw new Error(ocrResult.message || 'OCR 결과가 없습니다.');
+            }
+
+            const extractedText = ocrResult.data.extracted_text;
+            if (!extractedText.includes('$$')) {
+                console.warn('OCR 결과에 LaTeX 수식이 없거나 올바르지 않은 형식입니다.');
+            }
+
+            setSubmissionId(String(ocrResult.data.submission_id));
             setFeedback({
-                extracted_text: ocrResult.extracted_text,
+                extracted_text: extractedText,
                 grading_result: null,
-                isGrading: false
+                isGrading: false,
+                edited_text: extractedText
             });
-            setIsEditing(true);
         } catch (error) {
             console.error('Submit error:', error);
             if (error instanceof Error) {
@@ -93,6 +160,13 @@ export default function SolutionUpload() {
     const startGrading = async () => {
         if (!submissionId || !feedback) return;
         
+        const textToGrade = feedback.edited_text || feedback.extracted_text;
+        if (!textToGrade.includes('$$')) {
+            if (!confirm('수식이 올바른 형식($$)으로 감싸져 있지 않을 수 있습니다. 계속하시겠습니까?')) {
+                return;
+            }
+        }
+        
         try {
             setIsSubmitting(true);
             setFeedback(prev => {
@@ -103,16 +177,20 @@ export default function SolutionUpload() {
                 };
             });
 
-            const gradingResult = await submitGrading(
+            const gradingResultResponse = await submitGrading(
                 submissionId, 
-                feedback.edited_text || feedback.extracted_text
+                textToGrade
             );
-            
+
+            if (!gradingResultResponse.data) {
+                throw new Error('채점 결과가 없습니다.');
+            }
+
             setFeedback(prev => {
                 if (!prev) return prev;
                 return {
                     ...prev,
-                    grading_result: gradingResult,
+                    grading_result: gradingResultResponse.data,
                     isGrading: false
                 };
             });
@@ -128,8 +206,11 @@ export default function SolutionUpload() {
             });
         } finally {
             setIsSubmitting(false);
-            setIsEditing(false);
         }
+    };
+
+    const handleProblemKeySelect = (key: string) => {
+        setSelectedProblemKey(key);
     };
 
     return (
@@ -137,17 +218,34 @@ export default function SolutionUpload() {
             <LoadingModal 
                 isOpen={isSubmitting} 
                 message="답안을 분석하고 있습니다" 
-                timeout={60}
+                timeout={20}
             />
             <h2 className="text-2xl font-bold mb-6">수학 문제 풀이 제출</h2>
             
+            <div className="mb-6">
+                <div className="flex flex-col">
+                    <label htmlFor="problem-select" className="block text-sm font-medium text-gray-700 mb-2">
+                        채점 기준 선택
+                    </label>
+                    <select 
+                        id="problem-select"
+                        value={selectedProblemKey}
+                        onChange={(e) => handleProblemKeySelect(e.target.value)}
+                        className="w-full border-gray-300 rounded-md shadow-sm"
+                    >
+                        {problemKeys.map(key => (
+                            <option key={key} value={key}>{key}</option>
+                        ))}
+                    </select>
+                </div>
+            </div>
+
             <UploadForm
-                mathTopic={mathTopic}
-                setMathTopic={setMathTopic}
                 selectedFile={selectedFile}
                 previewUrl={previewUrl}
                 isSubmitting={isSubmitting}
                 studentId={studentId}
+                selectedProblemKey={selectedProblemKey}
                 onFileSelect={handleFileSelect}
                 onSubmit={handleSubmit}
             />
@@ -156,13 +254,9 @@ export default function SolutionUpload() {
                 <div className="mt-6 space-y-6">
                     <OCRResult
                         feedback={feedback}
-                        isEditing={isEditing}
                         isSubmitting={isSubmitting}
                         onEdit={handleTextEdit}
-                        onEditToggle={() => setIsEditing(!isEditing)}
-                        onEditCancel={() => setIsEditing(false)}
                         onStartGrading={startGrading}
-                        showEditControls={!feedback.grading_result}
                     />
 
                     {feedback.isGrading && <LoadingSpinner />}

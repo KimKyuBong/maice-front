@@ -3,92 +3,72 @@
 import { useEffect, useRef, useState } from 'react';
 
 interface LatexRendererProps {
-    text: string;
+    text?: string;
+}
+
+declare global {
+    interface Window {
+        MathJax?: {
+            typesetPromise?: (elements: HTMLElement[]) => Promise<void>;
+            startup?: {
+                defaultReady: () => void;
+            };
+            tex2svg?: (tex: string) => HTMLElement;
+        }
+    }
 }
 
 export default function LatexRenderer({ text }: LatexRendererProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [showOriginal, setShowOriginal] = useState(false);
-    const [renderedContent, setRenderedContent] = useState('');
 
     useEffect(() => {
-        const loadMathJax = async () => {
-            if (!window.MathJax) {
-                window.MathJax = {
-                    tex: {
-                        inlineMath: [['$', '$']],
-                        displayMath: [['$$', '$$']],
-                        processEscapes: true,
-                        packages: ['base', 'ams', 'noerrors', 'noundefined']
-                    },
-                    options: {
-                        enableMenu: false,
-                        renderActions: {
-                            addMenu: [],
-                            checkLoading: []
-                        }
-                    },
-                    startup: {
-                        typeset: false,
-                        ready: () => {
-                            window.MathJax?.startup?.defaultReady?.();
+        if (!text || showOriginal || !containerRef.current) return;
+
+        const renderMath = async () => {
+            try {
+                if (containerRef.current) {
+                    // 기존 내용 초기화
+                    containerRef.current.innerHTML = '';
+                    
+                    // 텍스트를 수식과 일반 텍스트로 분리
+                    const parts = text.split(/(\$\$.*?\$\$|\$.*?\$)/g);
+                    
+                    for (const part of parts) {
+                        if (part.startsWith('$')) {
+                            // 수식 부분
+                            const tex = part.replace(/^\$\$|\$\$$/g, '').replace(/^\$|\$$/g, '');
+                            const div = document.createElement('div');
+                            div.style.display = part.startsWith('$$') ? 'block' : 'inline';
+                            div.className = 'math';
+                            div.textContent = part;
+                            if (containerRef.current) {
+                                containerRef.current.appendChild(div);
+                            }
+                        } else if (part.trim()) {
+                            // 일반 텍스트 부분
+                            const span = document.createElement('span');
+                            span.textContent = part;
+                            if (containerRef.current) {
+                                containerRef.current.appendChild(span);
+                            }
                         }
                     }
-                };
 
-                const script = document.createElement('script');
-                script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js';
-                script.async = true;
-                
-                await new Promise<void>((resolve) => {
-                    script.onload = () => resolve();
-                    document.head.appendChild(script);
-                });
-            }
-
-            if (!containerRef.current) return;
-
-            try {
-                const processedText = text
-                    .replace(/Math input error/g, '')
-                    .replace(/\[unclear\]/g, '')
-                    .split('\n')
-                    .map(line => line.trim())
-                    .join('</p><p>')
-                    .replace(/([^$])(>|<)([^$])/g, '$1\\$2$3')
-                    .replace(/\$\$/g, '$')
-                    .replace(/\${3,}/g, '$');
-
-                setRenderedContent(`<p>${processedText}</p>`);
-                
-                if (containerRef.current) {
-                    containerRef.current.innerHTML = `<p>${processedText}</p>`;
-                }
-
-                await new Promise(resolve => setTimeout(resolve, 0));
-
-                if (window.MathJax?.typesetPromise) {
-                    await window.MathJax.typesetPromise([containerRef.current]);
+                    // MathJax 렌더링
+                    if (window.MathJax?.typesetPromise) {
+                        await window.MathJax.typesetPromise([containerRef.current]);
+                    }
                 }
             } catch (error) {
-                console.error('수식 렌더링 실패:', error);
-                setRenderedContent(text);
+                console.error('LaTeX 렌더링 오류:', error);
             }
         };
 
-        if (!showOriginal) {
-            loadMathJax();
-        }
+        renderMath();
     }, [text, showOriginal]);
 
-    useEffect(() => {
-        if (!showOriginal && containerRef.current) {
-            containerRef.current.innerHTML = renderedContent;
-            if (window.MathJax?.typesetPromise) {
-                window.MathJax.typesetPromise([containerRef.current]);
-            }
-        }
-    }, [showOriginal, renderedContent]);
+    if (!text) return null;
 
     return (
         <div className="space-y-4">
@@ -106,38 +86,10 @@ export default function LatexRenderer({ text }: LatexRendererProps) {
                 </pre>
             ) : (
                 <div 
-                    ref={containerRef} 
+                    ref={containerRef}
                     className="math-content break-words"
-                    style={{ lineHeight: '1.5' }}
                 />
             )}
         </div>
     );
-}
-
-// MathJax 타입 정의
-declare global {
-    interface Window {
-        MathJax: {
-            tex: {
-                inlineMath: string[][];
-                displayMath: string[][];
-                processEscapes: boolean;
-                packages: string[];
-            };
-            options: {
-                enableMenu: boolean;
-                renderActions: {
-                    addMenu: never[];
-                    checkLoading: never[];
-                };
-            };
-            startup: {
-                typeset: boolean;
-                ready?: () => void;
-                defaultReady?: () => void;
-            };
-            typesetPromise?: (elements: HTMLElement[]) => Promise<void>;
-        }
-    }
 }

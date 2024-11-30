@@ -1,25 +1,46 @@
 'use client';
 
-interface ApiResponse<T> {
-    data: T;
-    error?: string;
+import type { 
+    CriteriaResponse 
+} from '@/app/students/components/CriteriaManager/types';
+
+export interface ApiResponse<T> {
+    success: boolean;
+    message: string;
+    error: string | null;
+    data: T | null;
+}
+
+export interface DetailedCriteria {
+    id: number;
+    item: string;
+    points: number;
+    description: string;
 }
 
 export interface DetailedScore {
+    id: number;
     detailed_criteria_id: number;
-    criteria_info: {
-        item: string;
-        points: number;
-        description: string;
-    };
     score: number;
     feedback: string;
+    detailed_criteria: DetailedCriteria;
 }
 
-export interface GradingResult {
+export interface GradingHistoryItem {
+    id: number;
+    student_id: string;
+    problem_key: string;
+    problem_type: string;
+    submission_id: string;
+    extraction_id: string;
+    submission_date: string;
+    image_path: string;
+    extracted_text: string;
     total_score: number;
     max_score: number;
     feedback: string;
+    grading_number: number;
+    created_at: string;
     detailed_scores: DetailedScore[];
 }
 
@@ -29,15 +50,17 @@ export interface SubmissionResponse {
     image_path: string;
     extracted_text: string;
     extraction_number: number;
-    grading_result: GradingResult;
+    grading_result: GradingHistoryItem;
 }
 
-export interface OCRResponse {
-    submission_id: string;
+export interface OCRData {
+    submission_id: number;
     extracted_text: string;
+    problem_key: string;
+    student_id: string;
 }
 
-import type { GradingHistoryItem } from '@/app/students/types';
+export type OCRResponse = ApiResponse<OCRData>;
 
 export interface GradingListResponse {
     items: GradingHistoryItem[];
@@ -46,107 +69,98 @@ export interface GradingListResponse {
     offset: number;
 }
 
-async function fetchClientApi<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-    try {
-        const url = `/api${endpoint}`;
-        
-        const headers = options.body instanceof FormData
-            ? undefined
-            : {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                ...options.headers,
-            };
-
-        const res = await fetch(url, {
-            ...options,
-            credentials: 'include',
-            headers,
-        });
-
-        if (!res.ok) {
-            throw new Error(`API error: ${res.status} ${res.statusText}`);
-        }
-
-        const data = await res.json();
-        return { data };
-    } catch (error) {
-        return {
-            data: null as T,
-            error: error instanceof Error ? error.message : 'Unknown error'
-        };
-    }
+export interface CriteriaFormData {
+    problem_key: string;
+    problem_type: string;
+    items: Array<{
+        item: string;
+        points: number;
+        description: string;
+    }>;
 }
 
-export async function submitSolution(formData: FormData): Promise<SubmissionResponse> {
-    try {
-        const response = await fetch('/api/evaluation/submit', {
-            method: 'POST',
-            body: formData,
-            credentials: 'include',
-        });
+const TIMEOUT_DURATION = 180000; // 3분
 
-        if (!response.ok) {
-            throw new Error(`API error: ${response.status} ${response.statusText}`);
-        }
-
-        const responseData = await response.json();
-        return responseData;
-    } catch (error) {
-        console.error('API Error:', error);
-        throw error;
-    }
-}
-
-// API 타임아웃 설정
-const TIMEOUT_DURATION = 180000; // 3분으로 증가
-
-const fetchWithTimeout = async (url: string, options: RequestInit) => {
+export async function fetchClientApi<T>(url: string, options?: RequestInit): Promise<ApiResponse<T>> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_DURATION);
 
     try {
-        const response = await fetch(url, {
+        const response = await fetch(`/api${url}`, {
             ...options,
-            signal: controller.signal
+            signal: controller.signal,
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                ...options?.headers,
+            },
         });
+        
         clearTimeout(timeout);
-        return response;
+        const data = await response.json();
+        
+        return {
+            success: data.success,
+            message: data.message || '',
+            error: data.error || null,
+            data: data.data
+        };
     } catch (error) {
         clearTimeout(timeout);
-        throw error;
+        return {
+            success: false,
+            message: '요청 처리 중 오류가 발생했습니다.',
+            error: error instanceof Error ? error.message : '알 수 없는 오류',
+            data: null
+        };
     }
-};
-
-export async function submitOCR(formData: FormData): Promise<OCRResponse> {
-    const response = await fetchWithTimeout('/api/submission/ocr', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include'
-    });
-
-    if (!response.ok) {
-        throw new Error('OCR 처리 중 오류가 발생했습니다');
-    }
-
-    return await response.json();
 }
 
-export async function submitGrading(submissionId: string, editedText?: string): Promise<GradingResult> {
-    const response = await fetchWithTimeout(`/api/submission/grade/${submissionId}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: editedText ? JSON.stringify({ edited_text: editedText }) : undefined,
-        credentials: 'include'
-    });
+async function fetchClientApiFormData<T>(url: string, formData: FormData): Promise<ApiResponse<T>> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TIMEOUT_DURATION);
 
-    if (!response.ok) {
-        throw new Error('채점 중 오류가 발생했습니다');
+    try {
+        const response = await fetch(`/api${url}`, {
+            method: 'POST',
+            body: formData,
+            signal: controller.signal,
+            credentials: 'include'
+        });
+        
+        clearTimeout(timeout);
+        const data = await response.json();
+        
+        return {
+            success: data.success,
+            message: data.message || '',
+            error: data.error || null,
+            data: data.data
+        };
+    } catch (error) {
+        clearTimeout(timeout);
+        return {
+            success: false,
+            message: '요청 처리 중 오류가 발생했습니다.',
+            error: error instanceof Error ? error.message : '알 수 없는 오류',
+            data: null
+        };
     }
+}
 
-    return await response.json();
+export async function submitSolution(formData: FormData): Promise<ApiResponse<SubmissionResponse>> {
+    return fetchClientApiFormData<SubmissionResponse>('/evaluation/submit', formData);
+}
+
+export async function submitOCR(formData: FormData): Promise<OCRResponse> {
+    return fetchClientApiFormData<OCRData>('/submission/ocr', formData);
+}
+
+export async function submitGrading(submissionId: string, editedText?: string): Promise<ApiResponse<GradingHistoryItem>> {
+    return fetchClientApi<GradingHistoryItem>(`/submission/grade/${submissionId}`, {
+        method: 'POST',
+        body: editedText ? JSON.stringify({ edited_text: editedText }) : undefined
+    });
 }
 
 export async function fetchGradingHistory(
@@ -155,12 +169,49 @@ export async function fetchGradingHistory(
     limit = 10,
     offset = 0
 ): Promise<ApiResponse<GradingListResponse>> {
-    const params = new URLSearchParams({
-        ...(studentId && { student_id: studentId }),
-        ...(problemKey && { problem_key: problemKey }),
-        limit: limit.toString(),
-        offset: offset.toString()
-    });
+    const params = new URLSearchParams();
+    if (studentId) params.append('student_id', studentId);
+    if (problemKey) params.append('problem_key', problemKey);
+    params.append('limit', limit.toString());
+    params.append('offset', offset.toString());
 
-    return fetchClientApi<GradingListResponse>(`/gradings?${params.toString()}`);
+    return fetchClientApi<GradingListResponse>(`/gradings/list?${params.toString()}`);
+}
+
+export async function createGradingCriteria(data: CriteriaFormData): Promise<ApiResponse<CriteriaResponse>> {
+    return fetchClientApi<CriteriaResponse>('/criteria', {
+        method: 'POST',
+        body: JSON.stringify(data)
+    });
+}
+
+export async function listGradingCriteria(
+    skip = 0,
+    limit = 10
+): Promise<ApiResponse<CriteriaResponse[]>> {
+    return fetchClientApi<CriteriaResponse[]>(`/criteria/list?skip=${skip}&limit=${limit}`);
+}
+
+export async function updateGradingCriteria(
+    criteriaId: number,
+    data: Partial<CriteriaFormData>
+): Promise<ApiResponse<CriteriaResponse>> {
+    return fetchClientApi<CriteriaResponse>(`/criteria/${criteriaId}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    });
+}
+
+export async function deleteGradingCriteria(criteriaId: number): Promise<ApiResponse<void>> {
+    return fetchClientApi(`/criteria/${criteriaId}`, {
+        method: 'DELETE'
+    });
+}
+
+export async function getCriteriaByProblem(problemKey: string): Promise<ApiResponse<CriteriaResponse>> {
+    return fetchClientApi<CriteriaResponse>(`/criteria/${problemKey}/`);
+}
+
+export async function fetchGradingDetail(id: number): Promise<ApiResponse<GradingHistoryItem>> {
+    return fetchClientApi<GradingHistoryItem>(`/gradings/${id}`);
 } 

@@ -1,94 +1,70 @@
 "use client";
 
 import { useState } from 'react';
-import { loginStudent } from '@/app/utils/auth';
 
 interface LoginFormProps {
-    onLoginSuccess: () => void;
-}
-
-interface LoginState {
+    onLoginSuccess: (studentId: string, password: string) => Promise<void>;
     error?: string;
-    isLoading: boolean;
 }
 
-export default function LoginForm({ onLoginSuccess }: LoginFormProps) {
-    const [state, setState] = useState<LoginState>({
-        error: undefined,
-        isLoading: false
-    });
+export default function LoginForm({ onLoginSuccess, error }: LoginFormProps) {
+    const [studentId, setStudentId] = useState('');
+    const [password, setPassword] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
 
-    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        setState({ isLoading: true, error: undefined });
-
-        const formData = new FormData(event.currentTarget);
-        const nickname = formData.get('nickname') as string;
-
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsLoading(true);
         try {
-            const response = await loginStudent(nickname);
-            console.log('Login response:', response);
-            
-            if (response.status === 'success') {
-                setState({ isLoading: false, error: undefined });
-                await onLoginSuccess();
-            } else {
-                throw new Error('로그인에 실패했습니다.');
-            }
-        } catch (error) {
-            console.error('Login error:', error);
-            setState({
-                isLoading: false,
-                error: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
-            });
+            await onLoginSuccess(studentId, password);
+        } finally {
+            setIsLoading(false);
         }
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
-            <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow">
-                <div>
-                    <h2 className="text-center text-3xl font-extrabold text-gray-900">
-                        MAICE 수학 피드백 시스템
-                    </h2>
-                    <p className="mt-2 text-center text-sm text-gray-600">
-                        닉네임을 입력하고 시작하세요
-                    </p>
-                </div>
-                
-                <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-                    <div>
-                        <label htmlFor="nickname" className="sr-only">
-                            닉네임
-                        </label>
-                        <input
-                            id="nickname"
-                            name="nickname"
-                            type="text"
-                            required
-                            className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                            placeholder="닉네임을 입력하세요"
-                            minLength={2}
-                            maxLength={20}
-                            disabled={state.isLoading}
-                        />
-                    </div>
-
-                    {state.error && (
-                        <div className="text-red-500 text-sm text-center">
-                            {state.error}
-                        </div>
-                    )}
-
-                    <button
-                        type="submit"
-                        disabled={state.isLoading}
-                        className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                    >
-                        {state.isLoading ? '로그인 중...' : '시작하기'}
-                    </button>
-                </form>
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+                <label htmlFor="studentId" className="block text-sm font-medium text-gray-700">
+                    학번
+                </label>
+                <input
+                    type="text"
+                    id="studentId"
+                    value={studentId}
+                    onChange={(e) => setStudentId(e.target.value)}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    required
+                />
             </div>
-        </div>
+            
+            <div>
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                    비밀번호
+                </label>
+                <input
+                    type="password"
+                    id="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    required
+                />
+            </div>
+
+            {error && (
+                <div className="text-red-500 text-sm mt-2">
+                    {error}
+                </div>
+            )}
+
+            <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+            >
+                {isLoading ? '로그인 중...' : '로그인'}
+            </button>
+        </form>
     );
 } 
